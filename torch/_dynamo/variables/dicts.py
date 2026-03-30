@@ -2167,6 +2167,7 @@ class DunderDictVariable(ConstDictVariable):
             else:
                 merged[make_key(k)] = v
 
+        # pyrefly: ignore [bad-return]
         return merged
 
     # Mutations to __dict__ are tracked through side effects (SideEffectsProxyDict),
