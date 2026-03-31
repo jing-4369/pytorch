@@ -114,6 +114,7 @@ from .lists import (
     TupleIteratorVariable,
     TupleVariable,
 )
+from .misc import NullVariable
 from .tensor import (
     FakeItemVariable,
     supported_comparison_ops,
@@ -1288,7 +1289,7 @@ class BuiltinVariable(BaseBuiltinVariable):
                 continue
             if name in cell_and_freevars:
                 value = tx.output.side_effects.load_cell(value)
-            if type.__instancecheck__(variables.NullVariable, value) or isinstance(
+            if type.__instancecheck__(NullVariable, value) or isinstance(
                 value, variables.DeletedVariable
             ):
                 continue
