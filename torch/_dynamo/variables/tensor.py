@@ -386,14 +386,12 @@ class TensorVariable(VariableTracker):
         try:
             real_value = getattr(_input_associated_real_value, name)
         except AttributeError:
-            error_message = VariableTracker.build(
-                tx,
-                f"'{type(_input_associated_real_value).__name__}' object has no attribute '{name}'",
-            )
             raise_observed_exception(
                 AttributeError,
                 tx,
-                args=[error_message],
+                args=[
+                    f"'{type(_input_associated_real_value).__name__}' object has no attribute '{name}'"
+                ],
             )
 
         attr_source = AttrSource(self.source, name)
@@ -1490,6 +1488,9 @@ class TensorVariable(VariableTracker):
         )
 
     def method___len__(self, tx: "InstructionTranslator") -> VariableTracker:
+        return self.len_impl(tx)
+
+    def len_impl(self, tx: "InstructionTranslator") -> VariableTracker:
         return self.call_method(tx, "size", [VariableTracker.build(tx, 0)], {})
 
     def method___iter__(self, tx: "InstructionTranslator") -> ListIteratorVariable:

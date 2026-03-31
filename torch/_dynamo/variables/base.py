@@ -548,6 +548,22 @@ class VariableTracker(metaclass=VariableTrackerMeta):
             ],
         )
 
+    def len_impl(self, tx: Any) -> "VariableTracker":
+        """
+        Implements sq_length / mp_length (tp_as_sequence/tp_as_mapping len slot).
+        Subclasses must override this to support len(). Reaching this base is a
+        bug — it means len_impl is missing for that VariableTracker subclass.
+        """
+        unimplemented(
+            gb_type="Missing len_impl",
+            context=f"len({type(self).__name__})",
+            explanation=(
+                f"Dynamo does not support len() on {type(self).__name__}."
+                " Add len_impl to this VariableTracker subclass."
+            ),
+            hints=[*graph_break_hints.SUPPORTABLE],
+        )
+
     def call_method(
         self,
         tx: Any,
@@ -555,9 +571,10 @@ class VariableTracker(metaclass=VariableTrackerMeta):
         args: list["VariableTracker"],
         kwargs: dict[str, "VariableTracker"],
     ) -> "VariableTracker":
-        if name == "__len__" and self.has_unpack_var_sequence(tx):
-            assert not (args or kwargs)
-            return variables.ConstantVariable.create(len(self.unpack_var_sequence(tx)))
+        if name == "__len__" and not (args or kwargs):
+            from .object_protocol import generic_len
+
+            return generic_len(tx, self)
         elif (
             name == "__getattr__"
             and len(args) == 1
@@ -602,7 +619,7 @@ class VariableTracker(metaclass=VariableTrackerMeta):
                 raise_observed_exception(
                     type(e),
                     tx,
-                    args=list(map(variables.ConstantVariable.create, e.args)),
+                    args=list(e.args),
                 )
         hints = [
             f"Avoid calling `{self.python_type_name()}.{name}` in your code.",
@@ -1005,8 +1022,7 @@ class VariableTracker(metaclass=VariableTrackerMeta):
 
 
 def raise_type_error_exc(tx: Any, msg_str: str) -> NoReturn:
-    msg = variables.ConstantVariable.create(msg_str)
-    raise_observed_exception(TypeError, tx, args=[msg])
+    raise_observed_exception(TypeError, tx, args=[msg_str])
 
 
 def typestr(*objs: object) -> str:
