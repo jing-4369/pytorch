@@ -33,7 +33,13 @@ from functools import lru_cache, partial
 from pathlib import Path
 from tempfile import _TemporaryFileWrapper
 from time import time, time_ns
-from types import ModuleType
+from types import (
+    BuiltinFunctionType,
+    BuiltinMethodType,
+    FunctionType,
+    MethodType,
+    ModuleType,
+)
 from typing import Any, cast, Generic, Literal, NoReturn, TYPE_CHECKING, TypeVar
 from typing_extensions import override, Self
 
@@ -489,6 +495,51 @@ def extract_tensor_metadata_for_cache_key(t: Tensor) -> TensorMetadata:
     return meta
 
 
+# Types that pickle handles natively via GLOBAL/INST opcodes even though their
+# __reduce_ex__ may raise TypeError. We must not treat these as unpicklable in
+# reducer_override to avoid infinite recursion.
+_PICKLE_NATIVE_TYPES = frozenset(
+    OrderedSet(
+        [
+            FunctionType,
+            BuiltinFunctionType,
+            BuiltinMethodType,
+            MethodType,
+            type,
+        ]
+    )
+)
+
+
+def _get_stable_obj_key(obj: object) -> str:
+    """Produce a deterministic string key for an otherwise-unpicklable object.
+
+    Used by FxGraphCachePickler.reducer_override as a fallback for objects
+    whose types don't support default pickling (e.g. pybind11 enums).
+
+    The key is derived from the object's fully-qualified type name plus
+    values obtained via common accessor patterns.  All successful accessors
+    are combined to avoid collisions (e.g. two enum members sharing the same
+    type name).  If none of the accessors succeed, falls back to ``str(obj)``
+    which may not be stable across processes for certain types.
+    """
+    t = type(obj)
+    type_id = f"{t.__module__}.{t.__qualname__}"
+    parts = []
+    for accessor in (
+        lambda o: o.type.name,  # pybind11 enum pattern
+        lambda o: o.name,  # Python enum / named constant pattern
+        lambda o: o.value,  # value-based pattern
+    ):
+        try:
+            parts.append(str(accessor(obj)))
+        except Exception:
+            continue
+    if parts:
+        return f"{type_id}:{','.join(parts)}"
+    return f"{type_id}:{str(obj)}"
+
+
 class FxGraphCachePickler(pickle.Pickler):
     """
     Custom pickler to customize the pickling of some objects (Tensors), only for the
@@ -535,9 +586,42 @@ class FxGraphCachePickler(pickle.Pickler):
                 self._reduce_graph_module
             )
 
+        # Cache probe results so we only call __reduce_ex__ once per type.
+        # Maps type -> True (unpicklable) or False (picklable).
+        self._checked_types: dict[type, bool] = {}
+
         # Run with pickler.fast so it doesn't intern strings, making the hash result more predictable
         # TODO: pickler.fast is technically deprecated. Will this work on new python versions?
         self.fast = True
+
+    # pyrefly: ignore [bad-override]
+    def reducer_override(self, obj: Any) -> Any:
+        """Fallback reducer for objects not registered in dispatch_table.
+
+        This handles extension types (e.g. pybind11 enums) that don't support
+        default pickling.  Instead of bypassing the FX graph cache entirely,
+        we serialize a deterministic string representation of the object which
+        is sufficient for cache-key hashing.
+        """
+        t = type(obj)
+        # Types already registered or handled by default pickle.
+        if t in self.dispatch_table or t in _PICKLE_NATIVE_TYPES:
+            return NotImplemented
+        # Fast path for already-probed types.
+        cached = self._checked_types.get(t)
+        if cached is True:
+            return _ident, (_get_stable_obj_key(obj),)
+        if cached is False:
+            return NotImplemented
+        # Probe whether the default reduce protocol works.
+        try:
+            obj.__reduce_ex__(pickle.DEFAULT_PROTOCOL)
+        except (TypeError, AttributeError):
+            self._checked_types[t] = True
+            return _ident, (_get_stable_obj_key(obj),)
+        # Default pickling works – let pickle handle it.
+        self._checked_types[t] = False
+        return NotImplemented
 
     def _reduce_fake_tensor(
         self, t: Tensor
