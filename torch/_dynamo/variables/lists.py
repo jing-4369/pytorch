@@ -479,9 +479,6 @@ class BaseListVariable(VariableTracker):
                 ],
                 {},
             )
-        elif name == "__iter__":
-            self._install_list_length_guard()
-            return ListIteratorVariable(self.items, mutation_type=ValueMutationNew())
 
         return super().call_method(tx, name, args, kwargs)
 
@@ -714,6 +711,16 @@ class RangeVariable(BaseListVariable):
             return int(re)
         return 0
 
+    def iter_impl(self, tx: "InstructionTranslator") -> VariableTracker:
+        if not all(var.is_python_constant() for var in self.items):
+            # Can't represent a `range_iterator` without well defined bounds
+            return variables.misc.DelayGraphBreakVariable(
+                msg="Cannot create range_iterator: bounds (start, stop, step) must be fully defined as concrete constants.",
+            )
+        return RangeIteratorVariable(
+            self.start(), self.stop(), self.step(), self.range_length()
+        )
+
     def call_method(
         self,
         tx: "InstructionTranslator",
@@ -732,6 +739,11 @@ class RangeVariable(BaseListVariable):
             return RangeIteratorVariable(
                 self.start(), self.stop(), self.step(), self.range_length()
             )
+        elif name == "__len__":
+            length = self.range_length()
+            if length > sys.maxsize:
+                raise_observed_exception(OverflowError, tx)
+            return VariableTracker.build(tx, self.range_length())
         elif name in ("count", "__contains__"):
             return SourcelessBuilder.create(tx, self.range_count(*args))
         elif name == "index":
@@ -1110,6 +1122,10 @@ class ListVariable(CommonListMethodsVariable):
             codegen.foreach(self.items)
             codegen.append_output(create_instruction("BUILD_LIST", arg=len(self.items)))
 
+    def iter_impl(self, tx: "InstructionTranslator") -> VariableTracker:
+        self._install_list_length_guard()
+        return ListIteratorVariable(self.items, mutation_type=ValueMutationNew())
+
     def call_method(
         self,
         tx: "InstructionTranslator",
@@ -1447,6 +1463,10 @@ class TupleVariable(BaseListVariable):
     def debug_repr(self) -> str:
         return self.debug_repr_helper("(", ")")
 
+    def iter_impl(self, tx: "InstructionTranslator") -> VariableTracker:
+        self._install_list_length_guard()
+        return TupleIteratorVariable(self.items, mutation_type=ValueMutationNew())
+
     def reconstruct(self, codegen: "PyCodegen") -> None:
         codegen.foreach(self.items)
         codegen.append_output(create_build_tuple(len(self.items)))
@@ -1694,6 +1714,10 @@ class NamedTupleVariable(UserDefinedTupleVariable):
     @property
     def items(self) -> list[VariableTracker]:
         return self._tuple_vt.items
+
+    def iter_impl(self, tx: "InstructionTranslator") -> VariableTracker:
+        """NamedTuples are iterable like regular tuples"""
+        return TupleIteratorVariable(self.items, mutation_type=ValueMutationNew())
 
     def is_namedtuple(self) -> bool:
         return isinstance(getattr(self.tuple_cls, "_fields", None), tuple) and callable(
@@ -2134,6 +2158,10 @@ class RangeIteratorVariable(IteratorVariable):
         self.step = step
         self.len = len_
 
+    def iter_impl(self, tx: "InstructionTranslator") -> VariableTracker:
+        """Range iterators are their own iterator."""
+        return self
+
     def call_method(
         self,
         tx: "InstructionTranslator",
@@ -2143,8 +2171,6 @@ class RangeIteratorVariable(IteratorVariable):
     ) -> VariableTracker:
         if name == "__next__":
             return self.next_variable(tx)
-        elif name == "__iter__":
-            return self
         return super().call_method(tx, name, args, kwargs)
 
     def call_obj_hasattr(
