@@ -1150,6 +1150,12 @@ class aten_distributed_optimizations:
     # TODO(ivankobzarev): change default to "error" after real-world testing.
     spmd_mismatch: Literal["warn", "error"] = "warn"
 
+    # Bucket mode for collective bucketing.
+    # "default": plain torch.cat (visible to Inductor for fusion)
+    # "custom_ops": opaque custom op (FallbackKernel, no fusion)
+    # "custom_ops_multidtype": custom op with multi-dtype support
+    bucket_mode: str | None = None
+
 
 def parallel_compile_enabled_internally() -> bool:
     """
