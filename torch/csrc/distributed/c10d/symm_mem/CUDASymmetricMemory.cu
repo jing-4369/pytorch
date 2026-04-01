@@ -765,22 +765,38 @@ c10::intrusive_ptr<CUDAPeerAllocInfo> make_peer_alloc_info(
               &handles[r],
               (void*)(uintptr_t)imported_handles[r],
               CU_MEM_HANDLE_TYPE_POSIX_FILE_DESCRIPTOR),
-          ". Rank ", rank, " (host: ", reqs[rank].hostname,
-          ", device: ", reqs[rank].device_idx,
-          ") failed to import memory from rank ", r,
-          " (host: ", reqs[r].hostname,
-          ", device: ", reqs[r].device_idx, ").");
+          ". Rank ",
+          rank,
+          " (host: ",
+          reqs[rank].hostname,
+          ", device: ",
+          reqs[rank].device_idx,
+          ") failed to import memory from rank ",
+          r,
+          " (host: ",
+          reqs[r].hostname,
+          ", device: ",
+          reqs[r].device_idx,
+          ").");
     } else {
       C10_CUDA_DRIVER_CHECK_MSG(
           driver_api->cuMemImportFromShareableHandle_(
               &handles[r],
               (void*)&(imported_handles[r]),
               CU_MEM_HANDLE_TYPE_FABRIC),
-          ". Rank ", rank, " (host: ", reqs[rank].hostname,
-          ", device: ", reqs[rank].device_idx,
-          ") failed to import memory from rank ", r,
-          " (host: ", reqs[r].hostname,
-          ", device: ", reqs[r].device_idx, ").");
+          ". Rank ",
+          rank,
+          " (host: ",
+          reqs[rank].hostname,
+          ", device: ",
+          reqs[rank].device_idx,
+          ") failed to import memory from rank ",
+          r,
+          " (host: ",
+          reqs[r].hostname,
+          ", device: ",
+          reqs[r].device_idx,
+          ").");
     }
 #elif defined(USE_ROCM)
     C10_CUDA_CHECK(hipMemImportFromShareableHandle(
