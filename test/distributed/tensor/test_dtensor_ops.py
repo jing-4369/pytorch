@@ -128,18 +128,11 @@ def repurpose_ops(op_db, base_test_name, derived_test_name):
 # like python test/distributed/tensor/test_dtensor_ops.py > failed.expect
 dtensor_fails = {
     # view/reshape ops: rejects flatten/split of sharded dims without redistribution
-    xfail("cartesian_prod"),
-    xfail("flatten"),
-    xfail("kron"),
-    xfail("ravel"),
     xfail("repeat_interleave"),
     xfail("reshape"),
-    xfail("reshape_as"),
-    xfail("take_along_dim"),
     xfail("unbind"),
     xfail("unflatten"),
     xfail("view"),
-    xfail("view_as"),
     # factory/creation ops: test harness can't convert non-tensor args to DTensor
     xfail("arange"),
     xfail("broadcast_shapes"),
@@ -413,7 +406,6 @@ dtensor_fails_no_strategy = {
     xfail("nn.functional.grid_sample"),
     xfail("nn.functional.group_norm"),
     xfail("nn.functional.hardshrink"),
-    xfail("nn.functional.instance_norm"),
     xfail("nn.functional.interpolate", "nearest"),
     xfail("nn.functional.interpolate", "nearest-exact"),
     xfail("nn.functional.max_unpool1d"),
@@ -824,7 +816,6 @@ ops_unbacked_dtensor_dde = {
     xfail("bucketize"),
     skip("broadcast_to"),
     xfail("bucketize"),
-    xfail("cartesian_prod"),
     xfail("constant_pad_nd"),
     xfail("cumprod"),
     xfail("dist"),
@@ -895,9 +886,7 @@ ops_unbacked_dtensor_dde = {
     xfail("permute_copy"),
     xfail("prod"),
     xfail("quantile"),
-    xfail("ravel"),
     xfail("reshape"),
-    xfail("reshape_as"),
     xfail("rsub"),
     xfail("rot90"),
     xfail("scatter"),
@@ -917,7 +906,6 @@ ops_unbacked_dtensor_dde = {
     xfail("unsqueeze_copy"),
     xfail("vdot"),
     xfail("view"),
-    xfail("view_as"),
     xfail("view_as_complex"),
     xfail("view_copy"),
 }
