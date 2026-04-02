@@ -180,6 +180,40 @@ def _transfer_meta(
         new_meta["stack_trace"] = old_node.meta["stack_trace"]
 
 
+_TRACKED_META_FIELDS = OrderedSet(torch.fx.proxy._COPY_META_FIELDS) | OrderedSet(
+    ["stack_trace"]
+)
+
+
+def _check_replacement_meta(old: torch.fx.Node, new: torch.fx.Node) -> None:
+    """Verify a replacement node has the tracked metadata fields that the
+    matched node had.  Called from ``LoweringPatternEntry.apply`` and
+    ``ReplacementPatternEntry.replace_with_graph`` where the exact old→new
+    mapping is known.  Raises on any loss so that metadata regressions are
+    caught immediately.
+
+    Known limitations:
+
+    - ``GraphPatternEntry`` handlers that manipulate the graph directly
+      (e.g. ``graph.call_function`` + ``node.replace_all_uses_with``) bypass
+      this check entirely.  Only handlers that go through
+      ``replace_by_example`` or ``replace_with_graph`` are covered.
+    - This checks field *existence* only, not content correctness.  For
+      example, ``from_node`` may require appending a ``NodeSource`` rather
+      than overwriting (see ``_transfer_meta`` provenance tracking), but
+      that is not validated here.
+    """
+    old_fields = OrderedSet([f for f in _TRACKED_META_FIELDS if f in old.meta])
+    new_fields = OrderedSet([f for f in _TRACKED_META_FIELDS if f in new.meta])
+    lost = old_fields - new_fields
+    if lost:
+        raise RuntimeError(
+            f"Pattern matcher replacement {old.name} -> {new.name} "
+            f"lost metadata fields: {lost}. "
+            f"Ensure _transfer_meta or meta.update propagates these fields."
+        )
+
+
 class Match:
     """
     Represents a successfully matched pattern.
@@ -1155,6 +1189,7 @@ class LoweringPatternEntry(PatternEntry):
         with graph.inserting_before(node):
             replacement = graph.call_function(handler, tuple(match.args), match.kwargs)
             replacement.meta.update(node.meta)
+            _check_replacement_meta(node, replacement)
             node.replace_all_uses_with(replacement)
         assert match.nodes[-1] is node
         match.erase_nodes()
@@ -1331,6 +1366,9 @@ class ReplacementPatternEntry(PatternEntry):
                 if isinstance(new, torch.fx.Node):
                     if "val" not in new.meta:
                         new.meta.update(old.meta)
+                    else:
+                        _transfer_meta(new.meta, old, pass_name="replace_with_graph")
+                    _check_replacement_meta(old, new)
 
                     # Preserve the recompute tags in the replacement graph. We
                     # look at the recompute tags of the original output node to
