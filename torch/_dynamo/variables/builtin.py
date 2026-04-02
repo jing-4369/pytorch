@@ -1656,7 +1656,7 @@ class BuiltinVariable(VariableTracker):
             try:
                 return VariableTracker.build(tx, repr(arg.as_python_constant()))
             except NotImplementedError:
-                if isinstance(arg, (ListVariable, TupleVariable)):
+                if isinstance(arg, (ListVariable, TupleVariable, SizeVariable)):
                     try:
                         value = self._materialize_format_value(tx, arg)
                         return VariableTracker.build(tx, repr(value))
@@ -1683,14 +1683,22 @@ class BuiltinVariable(VariableTracker):
 
         if arg.is_python_constant():
             return arg.as_python_constant()
-        if isinstance(arg, SymNodeVariable):
-            return arg.evaluate_expr(tx.output)
         if isinstance(arg, UnspecializedPythonVariable):
+            if arg.raw_value is None:
+                raise NotImplementedError
             return arg.raw_value
+        if isinstance(arg, SizeVariable):
+            return torch.Size(
+                [self._materialize_format_value(tx, item) for item in arg.items]
+            )
         if isinstance(arg, ListVariable):
             return [self._materialize_format_value(tx, item) for item in arg.items]
         if isinstance(arg, TupleVariable):
             return tuple(self._materialize_format_value(tx, item) for item in arg.items)
+        # Symbolic values must stay deferred so we preserve symbolic formatting
+        # and avoid forcing guards while tracing default f-string formatting.
+        if isinstance(arg, SymNodeVariable):
+            raise NotImplementedError
         raise NotImplementedError
 
     def call_str(
@@ -1716,7 +1724,7 @@ class BuiltinVariable(VariableTracker):
             try:
                 return VariableTracker.build(tx, str(arg.as_python_constant()))
             except NotImplementedError:
-                if isinstance(arg, (ListVariable, TupleVariable)):
+                if isinstance(arg, (ListVariable, TupleVariable, SizeVariable)):
                     try:
                         value = self._materialize_format_value(tx, arg)
                         return VariableTracker.build(tx, str(value))
