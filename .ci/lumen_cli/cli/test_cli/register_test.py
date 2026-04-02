@@ -6,6 +6,8 @@ import logging
 from cli.lib.common.cli_helper import register_targets, RichHelp, TargetSpec
 from cli.lib.core.torchtitan.torchtitan_test import TorchtitanTestRunner
 from cli.lib.core.vllm.vllm_test import VllmTestRunner
+from cli.lib.pytorch.lint_test.lint_plans import LINT_PLANS
+from cli.lib.pytorch.runner import PytorchTestRunner
 
 
 logger = logging.getLogger(__name__)
@@ -66,3 +68,47 @@ def register_test_commands(subparsers: argparse._SubParsersAction) -> None:
         formatter_class=RichHelp,
     )
     register_targets(external_parser, _TARGETS, common_args=common_args)
+    _register_pytorch_commands(build_subparsers)
+
+
+def _register_pytorch_commands(subparsers: argparse._SubParsersAction) -> None:
+    _register_lint_commands(subparsers)
+
+
+def _register_lint_commands(subparsers: argparse._SubParsersAction) -> None:
+    available = "\n".join(
+        f"  {gid:30} {plan.title}" for gid, plan in LINT_PLANS.items()
+    )
+    parser = subparsers.add_parser(
+        "lint",
+        help="Run lint test plans",
+        description="Run PyTorch lint test.\n\nAvailable group IDs:\n" + available,
+        formatter_class=RichHelp,
+    )
+    parser.add_argument(
+        "--group-id",
+        required=True,
+        help="lint plan to run, e.g. 'lintrunner_noclang'",
+    )
+    parser.add_argument(
+        "--input",
+        metavar="KEY=VALUE",
+        action="append",
+        default=[],
+        help="override plan inputs, e.g. --input changed_files='src/foo.py src/bar.py'",
+    )
+    parser.add_argument(
+        "--env",
+        metavar="KEY=VALUE",
+        action="append",
+        default=[],
+        help="override plan env vars, e.g. --env ADDITIONAL_LINTRUNNER_ARGS='--skip CLANGTIDY --all-files'",
+    )
+    parser.add_argument("--re", action="store_true", default=False, help="submit to Remote Execution")
+    parser.add_argument("--pr", type=int, help="PR number (for --re, auto-detected if omitted)")
+    parser.add_argument("--commit", help="commit SHA (for --re, skips PR detection)")
+    parser.add_argument("--dry-run", action="store_true", default=False, help="dry run (for --re)")
+    parser.add_argument("--no-follow", action="store_true", default=False, help="don't follow logs (for --re)")
+    parser.add_argument("--show-hint", action="store_true", default=False, help="print rerun command after execution")
+    parser.add_argument("--interactive", type=int, metavar="MINUTES", nargs="?", const=60, default=None, help="keep container alive after job (default: 60 min)")
+    parser.set_defaults(func=lambda args: PytorchTestRunner(args).run())
